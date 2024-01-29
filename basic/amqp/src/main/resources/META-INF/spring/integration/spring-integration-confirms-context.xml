@@ -1,0 +1,89 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<beans xmlns="http://www.springframework.org/schema/beans"
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:int="http://www.springframework.org/schema/integration"
+	xmlns:int-amqp="http://www.springframework.org/schema/integration/amqp"
+	xmlns:rabbit="http://www.springframework.org/schema/rabbit"
+	xmlns:int-stream="http://www.springframework.org/schema/integration/stream"
+	xsi:schemaLocation="http://www.springframework.org/schema/integration/amqp https://www.springframework.org/schema/integration/amqp/spring-integration-amqp.xsd
+		http://www.springframework.org/schema/integration https://www.springframework.org/schema/integration/spring-integration.xsd
+		http://www.springframework.org/schema/integration/stream https://www.springframework.org/schema/integration/stream/spring-integration-stream.xsd
+		http://www.springframework.org/schema/rabbit https://www.springframework.org/schema/rabbit/spring-rabbit.xsd
+		http://www.springframework.org/schema/beans https://www.springframework.org/schema/beans/spring-beans.xsd">
+
+	<!-- From STDIN To RabbitMQ -->
+	<!-- 这个配置声明了一个用于从标准输入读取数据的适配器。读取的数据会发送到名为 "toRabbit" 的消息通道。这个适配器每秒轮询一次，最多获取一个消息 -->
+	<int-stream:stdin-channel-adapter id="consoleIn"
+		channel="toRabbit">
+		<int:poller fixed-delay="1000" max-messages-per-poll="1" />
+	</int-stream:stdin-channel-adapter>
+
+	<!-- 这个配置声明了一个名为 "toRabbit" 的消息通道	-->
+	<int:channel id="toRabbit" />
+
+	<!-- 这个配置声明了一个用于将消息发送到 RabbitMQ 的适配器。它使用了 RabbitMQ 的 AMQP 协议。
+	这个适配器根据消息内容以及一些表达式来决定发送到哪个 exchange 和 routing key。同时，它配置了确认（confirm）
+	和返回（return）机制，使得可以根据发送结果进行不同的处理
+	amqp-template：指定用于发送消息的 AMQP 模板（AmqpTemplate）的 bean 名称。通常，这个模板由 Spring Boot 自动配置生成，你只需要确保正确的引入了相关的 RabbitMQ 依赖
+	exchange-name-expression：指定消息发送的目标交换机的名称。这里使用了 SpEL 表达式，根据消息的内容判断交换机名称。如果消息内容（payload）是 "nack"，则使用 "badExchange"，否则使用 "si.test.exchange"
+	routing-key-expression：指定消息发送的目标路由键的表达式。类似于 exchange-name-expression，这里根据消息内容判断路由键。如果消息内容是 "fail"，则使用 "badKey"，否则使用 "si.test.binding"
+	confirm-correlation-expression：指定用于关联确认消息的表达式。在这里，确认消息的关联值被设置为发送的消息的内容（payload）
+	 -->
+	<int-amqp:outbound-channel-adapter
+		channel="toRabbit" amqp-template="amqpTemplate"
+		exchange-name-expression="payload.toLowerCase() == 'nack' ? 'badExchange' : 'si.test.exchange'"
+		routing-key-expression="payload.toLowerCase() == 'fail' ? 'badKey' : 'si.test.binding'"
+		confirm-correlation-expression="payload"
+		confirm-ack-channel="good"
+		confirm-nack-channel="errors"
+		return-channel="returns" />
+
+	<!--Confirms are correlated with the entire payload; for rich objects, we might just use 'payload.invoiceId' -->
+	<!-- good 通道上的转换器，将成功的消息进行转换并发送到 stdOut 通道 -->
+	<int:transformer input-channel="good" output-channel="stdOut" expression="payload + ' sent ok'"/>
+
+	<int:transformer input-channel="errors" output-channel="stdErr" expression="payload + ' send failed (nack)'"/>
+
+	<int:transformer input-channel="returns" output-channel="stdErr" expression="payload + ' returned:' + headers['amqp_returnReplyText']"/>
+
+
+
+	<!-- From RabbitMQ To STDOUT -->
+
+	<int-amqp:inbound-channel-adapter channel="fromRabbit"
+		queue-names="si.test.queue" connection-factory="connectionFactory" />
+
+	<int:channel id="fromRabbit">
+		<int:interceptors>
+			<int:wire-tap channel="loggingChannel" />
+		</int:interceptors>
+	</int:channel>
+
+	<int:transformer input-channel="fromRabbit" output-channel="stdOut" expression="'Received: ' + payload" />
+
+	<int-stream:stdout-channel-adapter id="stdOut"
+		append-newline="true" />
+
+	<int-stream:stderr-channel-adapter id="stdErr"
+		append-newline="true" />
+
+	<int:logging-channel-adapter id="loggingChannel" log-full-message="true" logger-name="tapInbound"
+		level="INFO" />
+
+	<!-- Infrastructure -->
+
+	<rabbit:connection-factory id="connectionFactory" host="localhost" confirm-type="CORRELATED"
+		publisher-returns="true" />
+
+	<rabbit:template id="amqpTemplate" connection-factory="connectionFactory" mandatory="true" /> <!-- for nacks -->
+
+	<rabbit:admin connection-factory="connectionFactory" />
+
+	<rabbit:queue name="si.test.queue" />
+
+	<rabbit:direct-exchange name="si.test.exchange">
+		<rabbit:bindings>
+			<rabbit:binding queue="si.test.queue" key="si.test.binding" />
+		</rabbit:bindings>
+	</rabbit:direct-exchange>
+
+</beans>
