@@ -26,7 +26,15 @@
 	amqp-template：指定用于发送消息的 AMQP 模板（AmqpTemplate）的 bean 名称。通常，这个模板由 Spring Boot 自动配置生成，你只需要确保正确的引入了相关的 RabbitMQ 依赖
 	exchange-name-expression：指定消息发送的目标交换机的名称。这里使用了 SpEL 表达式，根据消息的内容判断交换机名称。如果消息内容（payload）是 "nack"，则使用 "badExchange"，否则使用 "si.test.exchange"
 	routing-key-expression：指定消息发送的目标路由键的表达式。类似于 exchange-name-expression，这里根据消息内容判断路由键。如果消息内容是 "fail"，则使用 "badKey"，否则使用 "si.test.binding"
-	confirm-correlation-expression：指定用于关联确认消息的表达式。在这里，确认消息的关联值被设置为发送的消息的内容（payload）
+	confirm-correlation-expression：
+		其实对应rabbit就是以下代码
+		Message message = ...; // your message
+		CorrelationData correlationData = new CorrelationData();
+		correlationData.setId(message.getMessageProperties().getMessageId());
+		rabbitTemplate.convertAndSend(exchange, routingKey, message, correlationData);
+	confirm-ack-channel：channel.addConfirmListener(ack,nack) 用于监听消息发送的确认，即消息是否成功发送到“交换器”，成功调用的回调函数 关注 消息 -> 交换机
+	confirm-nack-channel：channel.addConfirmListener(ack,nack) 用于监听消息发送的确认，即消息是否成功发送到“交换器”，失败调用的回调函数 关注 消息 -> 交换机
+	return-channel：channel.addReturnListener() 用于监听消息发送的返回，即消息无法被路由到“队列”时的返回结果(只会是失败的时候调用) 关注 消息 -> 队列
 	 -->
 	<int-amqp:outbound-channel-adapter
 		channel="toRabbit" amqp-template="amqpTemplate"

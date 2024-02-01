@@ -34,9 +34,10 @@
 		</int:interceptors>
 	</int:channel>
 
-	<int:transformer input-channel="fromRabbit" output-channel="consoleOut" expression="'Received: ' + payload" />
+	<!-- 将其转换为字符串形式，并在前面加上"Received: "的前缀，然后将转换后的结果发送到输出通道"consoleOut"中 -->
+<!--	<int:transformer input-channel="fromRabbit" output-channel="consoleOut" expression="'Received: ' + payload" />-->
 
-	<int-stream:stdout-channel-adapter id="consoleOut"
+	<int-stream:stdout-channel-adapter id="consoleOut" channel="fromRabbit"
 		append-newline="true" />
 
 	<int:logging-channel-adapter id="loggingChannel" log-full-message="true" logger-name="tapInbound"
