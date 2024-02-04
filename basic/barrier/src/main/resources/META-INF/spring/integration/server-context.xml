@@ -11,6 +11,7 @@
 		http://www.springframework.org/schema/integration/http https://www.springframework.org/schema/integration/http/spring-integration-http.xsd
 		http://www.springframework.org/schema/integration https://www.springframework.org/schema/integration/spring-integration.xsd">
 
+    <!-- 用于接收“/postGateway”路径下的请求消息 转发至 receiveChannel通道  -->
     <int-http:inbound-gateway request-channel="receiveChannel"
                               path="/postGateway"
                               error-channel="errorChannel"
